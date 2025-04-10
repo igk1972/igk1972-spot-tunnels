@@ -1,0 +1,15 @@
+hosts:
+
+  - name: fr-par-1
+    host: fr-par-1.domain.tld
+    port: 22
+
+  - name: ch-brn-1
+    host: ch-brn-1.domain.tld
+    port: 2201
+    user: devops
+    ssh_key: path/to/special/key/id_ed25519
+
+  - name: de-fra-1
+    host: de-fra-1.domain.tld
+    port: 22
