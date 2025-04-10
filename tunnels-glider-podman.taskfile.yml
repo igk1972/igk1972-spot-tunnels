@@ -33,6 +33,29 @@ vars:
 
 tasks:
 
+  host-prune:*:container:*:
+    internal: true
+    silent: true
+    vars:
+      HOSTNAME: '{{index .MATCH 0}}'
+      CONTAINER: '{{index .MATCH 1}}'
+      PROTOCOL: '{{ .CONTAINER | splitList "-" | first }}'
+      ID: '{{ slice (.CONTAINER | splitList "-") 1 | join "-" }}'
+      USER:
+        sh: echo "{{.USERS}}" | grep '{{.ID}}' || echo ',-,^$,,,^$,'
+      HOSTS: '{{ (.USER | split ",")._2 }}|{{ (.USER | split ",")._5 }}'
+    status:
+      - 'grep -q -E "{{.HOSTS}}" <<< "{{.HOSTNAME}}"'
+    cmds:
+      - task: 'host-podman-container:{{.HOSTNAME}}:remove:{{.CONTAINER}}'
+        vars:
+          HOST: '{{.HOST}}'
+          SSH_PORT: '{{.SSH_PORT}}'
+          SSH_LOGIN: '{{.SSH_LOGIN}}'
+          SSH_KEY: '{{.SSH_KEY}}'
+          NAMESPACE: '{{.NAMESPACE}}'
+
+
   host-run:*:user:
     internal: true
     silent: true
