@@ -33,6 +33,28 @@ vars:
 
 tasks:
 
+  host-users:*:
+    internal: true
+    silent: true
+    vars:
+      HOSTNAME: '{{index .MATCH 0}}'
+    cmds:
+      - echo && echo '{{.HOSTNAME}}'
+      - for: { var: USERS, split: "\n" }
+        task: 'host-run:{{.HOSTNAME}}:user'
+        vars:
+          HOST: '{{.HOST}}'
+          SSH_PORT: '{{.SSH_PORT}}'
+          SSH_LOGIN: '{{.SSH_LOGIN}}'
+          SSH_KEY: '{{.SSH_KEY}}'
+          NAMESPACE: '{{.NAMESPACE}}'
+          USER_ID: '{{ (.ITEM | split ",")._0 }}'
+          USER_LOGIN: '{{ (.ITEM | split ",")._1 }}'
+          VLESS_HOSTS: '{{ (.ITEM | split ",")._2 }}'
+          SHADOWSOCK_PORT: '{{ (.ITEM | split ",")._3 }}'
+          SHADOWSOCK_PASS: '{{ (.ITEM | split ",")._4 }}'
+          SHADOWSOCK_HOSTS: '{{ (.ITEM | split ",")._5 }}'
+
   host-prune:*:container:*:
     internal: true
     silent: true
