@@ -1,7 +1,7 @@
 version: '3'
 
 vars:
-  DNS_ZONE: 's.igk.one'
+  DNS_ZONE: '{{.DNS_ZONE | default "domain.tld"}}'
   INVENTORY_FILE: '{{.INVENTORY_FILE | default "tunnels-inventory.yml"}}'
   USERS_FILE: '{{.USERS_FILE | default "tunnels-users.yml"}}'
   SSH_KEYS_PATH: '{{.SSH_KEYS_PATH | default "tunnels-ssh-keys"}}'
