@@ -1,0 +1,38 @@
+version: '3'
+
+vars:
+  DNS_ZONE: 's.igk.one'
+  INVENTORY_FILE: '{{.INVENTORY_FILE | default "tunnels-inventory.yml"}}'
+  USERS_FILE: '{{.USERS_FILE | default "tunnels-users.yml"}}'
+  SSH_KEYS_PATH: '{{.SSH_KEYS_PATH | default "tunnels-ssh-keys"}}'
+  SSH_KEYS_TYPE: '{{.SSH_KEYS_TYPE | default "ed25519"}}'
+  SSH_LOGIN: '{{.SSH_LOGIN | default "root"}}'
+  SSH_KEY: '{{.SSH_KEY | default "~/.ssh/id_ed25519"}}'
+  LINK_NAME_PREFIX: '{{.LINK_NAME_PREFIX | default ""}}'
+  #
+  CONTAINER_NAMESPACE: '{{.CONTAINER_NAMESPACE | default "tunnels-glider"}}'
+  CONTAINER_MEMORY: '{{.CONTAINER_MEMORY | default "64Mb"}}'
+  #
+  GLIDER_IMAGE: '{{.GLIDER_IMAGE | default "ghcr.io/nadoo/glider:0.16.4"}}'
+  REPROXY_IMAGE: '{{.REPROXY_IMAGE | default "ghcr.io/umputun/reproxy:v1.2.3"}}'
+  #
+  SHADOWSOCK_CIPHER: '{{.SHADOWSOCK_CIPHER | default "chacha20-ietf-poly1305"}}'
+  #
+  NODES:
+    sh: |
+      yq -r -o csv \
+      ".hosts[] | [ .name, .host, (.port // \"22\"), (.user // \"root\"), (.orchestrator // \"podman\"), (.tags // [] | join(\";\")), (.ssh_key // \"{{.SSH_KEY}}\") ]" \
+      "{{.INVENTORY_FILE}}"
+  #
+  USERS:
+    sh: |
+      yq -r -o csv \
+      ".users[] | [ .uuid, .name, (.vless_hosts // \"^\$\"), (.shadowsock_port // \"\"), (.shadowsock_pass // \"\"), (.shadowsock_hosts // \"^\$\") ]" \
+      "{{.USERS_FILE}}"
+  #
+
+tasks:
+
+  default:
+    cmds:
+      - echo
