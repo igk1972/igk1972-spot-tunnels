@@ -33,6 +33,39 @@ vars:
 
 tasks:
 
+  keys:
+    silent: true
+    cmds:
+      - |
+        cat << EOF
+        {{$nodes := .NODES | default "" -}}
+        {{$cipher := .SHADOWSOCK_CIPHER | default "" -}}
+        {{$prefix := .LINK_NAME_PREFIX | default "" -}}
+        {{range $_, $u := .USERS | default "" | splitLines}}
+          {{if not (eq $u "") -}}
+            {{$user := $u | split "," -}}
+            {{$user._1 -}}
+            {{$vless_hosts := $user._2 -}}
+            {{$shadowsock_hosts := $user._5 -}}
+            {{range $_, $n := $nodes | splitLines -}}
+              {{if not (eq $n "") -}}
+                {{$node := $n | split "," -}}
+                {{$hostname := $node._0 -}}
+                {{if not (eq $user._0 "") -}}
+                  {{if (regexMatch $vless_hosts $hostname)}}
+                    {{printf "vless://%s@%s:443?security=tls&type=ws&host=%s&path=/vless-%s#%s%s_vless_ws" $user._0 $node._1 $node._1 $user._0 $prefix $hostname}}
+                  {{- end -}}
+                {{- end -}}
+                {{if not (eq $user._3 "") -}}
+                  {{if (regexMatch $shadowsock_hosts $hostname)}}
+                    {{printf "ss://%s@%s:%s#%s%s_shadowsocks" ((printf "%s:%s" $cipher $user._4) | b64enc) $node._1 $user._3 $prefix $hostname}}
+                  {{- end -}}
+                {{- end}}
+              {{- end}}
+            {{- end}}
+          {{- end}}
+        {{end}}EOF
+
   status:
     silent: true
     cmds:
