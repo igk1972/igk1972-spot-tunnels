@@ -33,6 +33,31 @@ vars:
 
 tasks:
 
+  status:
+    silent: true
+    cmds:
+      - for: { var: NODES, split: "\n" }
+        task: 'host-podman-list:{{ (.ITEM | split ",")._0 }}'
+        vars:
+          HOST: '{{ (.ITEM | split ",")._1 }}'
+          SSH_PORT: '{{ (.ITEM | split ",")._2 }}'
+          SSH_LOGIN: '{{ (.ITEM | split ",")._3 }}'
+          SSH_KEY: '{{ (.ITEM | split ",")._6 }}'
+          NAMESPACE: '{{ .CONTAINER_NAMESPACE }}'
+
+  apply:
+    silent: true
+    cmds:
+      - for: { var: NODES, split: "\n" }
+        task: 'host:{{ (.ITEM | split ",")._0 }}'
+        vars:
+          HOST: '{{ (.ITEM | split ",")._1 }}'
+          SSH_PORT: '{{ (.ITEM | split ",")._2 }}'
+          SSH_LOGIN: '{{ (.ITEM | split ",")._3 }}'
+          SSH_KEY: '{{ (.ITEM | split ",")._6 }}'
+          NAMESPACE: '{{ .CONTAINER_NAMESPACE }}'
+
+
   host:*:
     internal: true
     silent: true
