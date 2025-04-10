@@ -420,3 +420,17 @@ tasks:
           SSH_LOGIN: '{{.SSH_LOGIN}}'
           SSH_KEY: '{{.SSH_KEY}}'
           NAMESPACE: '{{.NAMESPACE}}'
+
+
+  ssh:keys:generate:
+    internal: true
+    silent: true
+    cmds:
+      - mkdir -p '{{.SSH_KEYS_PATH}}'
+      - for: { var: USERS, split: "\n" }
+        cmd: |
+          USER_ID='{{ (.ITEM | split ",")._0 }}'
+          KEY_FILE="{{.SSH_KEYS_PATH}}/${USER_ID}_ed25519"
+          test -f "${KEY_FILE}" && \
+            echo "Key '${USER_ID}' exists" || \
+            echo ssh-keygen -t "{{.SSH_KEYS_TYPE}}" -C "" -f "${KEY_FILE}"
