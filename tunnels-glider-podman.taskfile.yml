@@ -33,6 +33,72 @@ vars:
 
 tasks:
 
+  host-run:*:user:
+    internal: true
+    silent: true
+    vars:
+      HOSTNAME: '{{index .MATCH 0}}'
+    cmds:
+      - task: 'host-run:{{.HOSTNAME}}:user:vless-ws'
+        vars:
+          HOST: '{{.HOST}}'
+          SSH_PORT: '{{.SSH_PORT}}'
+          SSH_LOGIN: '{{.SSH_LOGIN}}'
+          SSH_KEY: '{{.SSH_KEY}}'
+          UUID: '{{.USER_ID}}'
+          LOGIN: '{{.USER_LOGIN}}'
+          HOSTS: '{{.VLESS_HOSTS}}'
+      - task: 'host-run:{{.HOSTNAME}}:user:shadowsocks'
+        vars:
+          HOST: '{{.HOST}}'
+          SSH_PORT: '{{.SSH_PORT}}'
+          SSH_LOGIN: '{{.SSH_LOGIN}}'
+          SSH_KEY: '{{.SSH_KEY}}'
+          LOGIN: '{{.USER_LOGIN}}'
+          PASS: '{{.SHADOWSOCK_PASS}}'
+          PORT: '{{.SHADOWSOCK_PORT}}'
+          HOSTS: '{{.SHADOWSOCK_HOSTS}}'
+
+  host-run:*:user:vless-ws:
+    internal: true
+    silent: true
+    vars:
+      HOSTNAME: '{{index .MATCH 0}}'
+    status:
+      - 'grep -q -v -E "{{.HOSTS}}" <<< "{{.HOSTNAME}}"'
+    cmds:
+      - task: 'host-podman-container:{{.HOSTNAME}}:run:vless-{{.UUID}}'
+        vars:
+          HOST: '{{.HOST}}'
+          SSH_PORT: '{{.SSH_PORT}}'
+          SSH_LOGIN: '{{.SSH_LOGIN}}'
+          SSH_KEY: '{{.SSH_KEY}}'
+          NAMESPACE: '{{.NAMESPACE}}'
+          NETWORKS: '--network ingress'
+          OPTIONS: '--read-only'
+          IMAGE: '{{.GLIDER_IMAGE}}'
+          COMMAND: "-listen 'ws://:8080/,vless://{{.UUID}}@'"
+
+  host-run:*:user:shadowsocks:
+    internal: true
+    silent: true
+    vars:
+      HOSTNAME: '{{index .MATCH 0}}'
+    status:
+      - "grep -q -v -E '{{.HOSTS}}' <<< '{{.HOSTNAME}}'"
+    cmds:
+      - task: 'host-podman-container:{{.HOSTNAME}}:run:{{.NAMESPACE}}-shadowsocks-{{.PORT}}'
+        vars:
+          HOST: '{{.HOST}}'
+          SSH_PORT: '{{.SSH_PORT}}'
+          SSH_LOGIN: '{{.SSH_LOGIN}}'
+          SSH_KEY: '{{.SSH_KEY}}'
+          NAMESPACE: '{{.NAMESPACE}}'
+          OPTIONS: '--read-only'
+          PORTS: '--publish {{.PORT}}:{{.PORT}}'
+          COMMAND: "-listen 'ss://{{.SHADOWSOCK_CIPHER}}:{{.PASS}}@:{{.PORT}}'"
+
+
   host-podman-network:*:
     internal: true
     silent: true
