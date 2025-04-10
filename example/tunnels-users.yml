@@ -1,0 +1,19 @@
+users:
+
+  - name: philip-dick
+    uuid: 5386a1c3-f727-490c-b3d0-457310327ce1
+    vless_hosts: . # regexp for all hosts
+
+  - name: isaac-asimov
+    uuid: 83a9d390-5234-4cc4-9568-3444fcda814e
+    vless_hosts: (fr|uk|de|il)- # regexp for host names
+
+  - name: william-gibson
+    uuid: c07e356e-3f34-45e5-8926-2053512148f2
+    vless_hosts: nl-ams-
+    shadowsock_port: 54321
+    shadowsock_pass: SuPeR!PaSs
+    shadowsock_hosts: ch-brn-1 # unique host name
+
+  - name: some-user-without-access
+    uuid: 7ce226a8-adfc-4b32-a5b4-8f8c1f9eca7d
