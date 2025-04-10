@@ -33,6 +33,51 @@ vars:
 
 tasks:
 
+  host:*:
+    internal: true
+    silent: true
+    vars:
+      HOSTNAME: '{{index .MATCH 0}}'
+    cmds:
+      - echo
+      - task: 'host-podman-network:{{.HOSTNAME}}'
+        vars:
+          HOST: '{{.HOST}}'
+          SSH_PORT: '{{.SSH_PORT}}'
+          SSH_LOGIN: '{{.SSH_LOGIN}}'
+          SSH_KEY: '{{.SSH_KEY}}'
+          NAMESPACE: '{{.NAMESPACE}}'
+      - task: 'host-podman-pod:{{.HOSTNAME}}'
+        vars:
+          HOST: '{{.HOST}}'
+          SSH_PORT: '{{.SSH_PORT}}'
+          SSH_LOGIN: '{{.SSH_LOGIN}}'
+          SSH_KEY: '{{.SSH_KEY}}'
+          NAMESPACE: '{{.NAMESPACE}}'
+      - task: 'host-podman-ingress:{{.HOSTNAME}}'
+        vars:
+          HOST: '{{.HOST}}'
+          SSH_PORT: '{{.SSH_PORT}}'
+          SSH_LOGIN: '{{.SSH_LOGIN}}'
+          SSH_KEY: '{{.SSH_KEY}}'
+          NAMESPACE: '{{.NAMESPACE}}'
+      - task: 'host-podman-prune:{{.HOSTNAME}}'
+        vars:
+          HOST: '{{.HOST}}'
+          SSH_PORT: '{{.SSH_PORT}}'
+          SSH_LOGIN: '{{.SSH_LOGIN}}'
+          SSH_KEY: '{{.SSH_KEY}}'
+          NAMESPACE: '{{.NAMESPACE}}'
+      - task: 'host-users:{{.HOSTNAME}}'
+        vars:
+          HOST: '{{.HOST}}'
+          SSH_PORT: '{{.SSH_PORT}}'
+          SSH_LOGIN: '{{.SSH_LOGIN}}'
+          SSH_KEY: '{{.SSH_KEY}}'
+          NAMESPACE: '{{.NAMESPACE}}'
+      - echo
+
+
   host-users:*:
     internal: true
     silent: true
