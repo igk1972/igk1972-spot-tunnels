@@ -1,0 +1,122 @@
+version: '3'
+
+tasks:
+
+
+  network:*:create:*:
+    internal: true
+    silent: true
+    vars:
+      HOSTNAME: '{{index .MATCH 0}}'
+      NETWORK_NAME: '{{index .MATCH 1}}'
+      SSH: 'ssh {{.SSH_OPTIONS}} -i {{.SSH_KEY}} -p {{.SSH_PORT}} {{.SSH_LOGIN}}@{{.HOST}}'
+    cmds:
+      - echo 'Network "{{.NETWORK_NAME}}" on {{.HOSTNAME}} '
+      - cmd: |
+          {{.SSH}} podman network inspect '{{.NETWORK_NAME}}' >/dev/null 2>&1 || \
+          {{.SSH}} podman network create '{{.NETWORK_NAME}}' 2>&1 \
+          | sed -E "s#^#\t#"
+        ignore_error: true
+
+
+  group:*:create:*:
+    internal: true
+    silent: true
+    vars:
+      HOSTNAME: '{{index .MATCH 0}}'
+      POD_NAME: '{{index .MATCH 1}}'
+      SSH: 'ssh {{.SSH_OPTIONS}} -i {{.SSH_KEY}} -p {{.SSH_PORT}} {{.SSH_LOGIN}}@{{.HOST}}'
+    cmds:
+      - echo 'Pod "{{.POD_NAME}}" on {{.HOSTNAME}}'
+      - cmd: |
+          {{.SSH}} podman pod inspect '{{.POD_NAME}}' >/dev/null 2>&1 || \
+          {{.SSH}} podman pod create \
+            --network '{{.POD_NAME}}' \
+            --infra-name '{{.POD_NAME}}-pod' \
+            '{{.POD_NAME}}' 2>&1 \
+          | sed -E "s#^#\t#"
+        ignore_error: true
+
+
+  container:*:run:*:
+    internal: true
+    silent: true
+    vars:
+      HOSTNAME: '{{index .MATCH 0}}'
+      CONTAINER: '{{index .MATCH 1}}'
+      SSH: 'ssh {{.SSH_OPTIONS}} -i {{.SSH_KEY}} -p {{.SSH_PORT}} {{.SSH_LOGIN}}@{{.HOST}}'
+      OPTIONS: '--replace'
+    cmds:
+      - defer: echo
+      - echo -n '  {{.CONTAINER}} '
+      - cmd: |
+          {{.SSH}} podman wait --condition running '{{.CONTAINER}}' >/dev/null 2>&1 || \
+          {{.SSH}} podman \
+            run -d --restart=always \
+            --pod '{{.NAMESPACE}}' \
+            --memory '{{.MEMORY}}' \
+            --name '{{.CONTAINER}}' \
+            {{.NETWORKS}} --network '{{.NAMESPACE}}' \
+            {{.OPTIONS | default "" | catLines}} \
+            {{.VOLUMES | default "" | catLines}} \
+            {{.ENVS | default "" | catLines}} \
+            {{.PORTS | default "" | catLines}} \
+            {{.LABELS | default "" | catLines}} \
+            {{.IMAGE}} {{.COMMAND | default "" | catLines}}
+
+
+  container:*:remove:*:
+    internal: true
+    silent: true
+    vars:
+      HOSTNAME: '{{index .MATCH 0}}'
+      CONTAINER: '{{index .MATCH 1}}'
+      SSH: 'ssh {{.SSH_OPTIONS}} -i {{.SSH_KEY}} -p {{.SSH_PORT}} {{.SSH_LOGIN}}@{{.HOST}}'
+    cmds:
+      - echo 'Remove {{.CONTAINER}} on {{.HOSTNAME}}'
+      - cmd: |
+          {{.SSH}} podman rm --force '{{.CONTAINER}}' 2>&1 | sed -E "s#^#\t#"
+
+
+  list:*:
+    internal: true
+    silent: true
+    vars:
+      HOSTNAME: '{{index .MATCH 0}}'
+      SSH: 'ssh {{.SSH_OPTIONS}} -i {{.SSH_KEY}} -p {{.SSH_PORT}} {{.SSH_LOGIN}}@{{.HOST}}'
+    cmds:
+      - echo '{{.HOSTNAME}}'
+      - cmd: |
+          {{.SSH}} podman container ps --all --filter 'name=ingress-gateway-reproxy' --format 'json' \
+          | jq -r '.[] | "\t"+ .State +" "+ .Names[0]'
+        ignore_error: true
+      - cmd: |
+          {{.SSH}} podman container ps --all --filter 'pod={{.NAMESPACE}}' --format 'json' \
+          | jq -r '.[] | "\t"+ .State +" "+ .Names[0]' \
+          | grep -v '\-pod' \
+          | sed -E 's#{{.NAMESPACE}}-##'
+        ignore_error: true
+      - echo
+
+
+  prune:*:
+    internal: true
+    silent: true
+    vars:
+      HOSTNAME: '{{index .MATCH 0}}'
+      SSH: 'ssh {{.SSH_OPTIONS}} -i {{.SSH_KEY}} -p {{.SSH_PORT}} {{.SSH_LOGIN}}@{{.HOST}}'
+      CONTAINERS:
+        sh: |
+          {{.SSH}} podman container ps --all --filter 'pod={{.NAMESPACE}}' --format 'json' \
+          | jq -r '.[] | "\t"+ .State +" "+ .Names[0]' \
+          | grep -v '\-pod' \
+          | sed -E 's#^.+ ({{.NAMESPACE}}-)*##'
+    cmds:
+      - for: { var: CONTAINERS, split: "\n" }
+        task: ':host-prune:{{.HOSTNAME}}:container:{{ .ITEM }}'
+        vars:
+          HOST: '{{.HOST}}'
+          SSH_PORT: '{{.SSH_PORT}}'
+          SSH_LOGIN: '{{.SSH_LOGIN}}'
+          SSH_KEY: '{{.SSH_KEY}}'
+          NAMESPACE: '{{.NAMESPACE}}'
