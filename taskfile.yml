@@ -8,6 +8,9 @@ vars:
   SSH_KEYS_TYPE: '{{.SSH_KEYS_TYPE | default "ed25519"}}'
   SSH_LOGIN: '{{.SSH_LOGIN | default "root"}}'
   SSH_KEY: '{{.SSH_KEY | default "~/.ssh/id_ed25519"}}'
+  SSH_OPTIONS: |
+    -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no \
+    -o LogLevel=ERROR {{.SSH_OPTIONS | default ""}} \
   LINK_NAME_PREFIX: '{{.LINK_NAME_PREFIX | default ""}}'
   #
   CONTAINER_NAMESPACE: '{{.CONTAINER_NAMESPACE | default "tunnels-glider"}}'
@@ -37,6 +40,7 @@ includes:
     internal: true
 
 tasks:
+
 
   keys:
     silent: true
@@ -71,17 +75,20 @@ tasks:
           {{- end}}
         {{end}}EOF
 
+
   status:
     silent: true
     cmds:
       - for: { var: NODES, split: "\n" }
-        task: 'host-podman-list:{{ (.ITEM | split ",")._0 }}'
+        task: '{{ (.ITEM | split ",")._4 }}:list:{{ (.ITEM | split ",")._0 }}'
         vars:
           HOST: '{{ (.ITEM | split ",")._1 }}'
           SSH_PORT: '{{ (.ITEM | split ",")._2 }}'
           SSH_LOGIN: '{{ (.ITEM | split ",")._3 }}'
           SSH_KEY: '{{ (.ITEM | split ",")._6 }}'
+          ORCHESTRATOR: '{{ (.ITEM | split ",")._4 }}'
           NAMESPACE: '{{ .CONTAINER_NAMESPACE }}'
+
 
   apply:
     silent: true
@@ -93,6 +100,7 @@ tasks:
           SSH_PORT: '{{ (.ITEM | split ",")._2 }}'
           SSH_LOGIN: '{{ (.ITEM | split ",")._3 }}'
           SSH_KEY: '{{ (.ITEM | split ",")._6 }}'
+          ORCHESTRATOR: '{{ (.ITEM | split ",")._4 }}'
           NAMESPACE: '{{ .CONTAINER_NAMESPACE }}'
 
 
@@ -102,43 +110,138 @@ tasks:
     vars:
       HOSTNAME: '{{index .MATCH 0}}'
     cmds:
-      - echo
-      - task: 'host-podman-network:{{.HOSTNAME}}'
+      - echo '{{.HOSTNAME}} '
+      - task: 'host-requirements:{{.HOSTNAME}}'
         vars:
           HOST: '{{.HOST}}'
           SSH_PORT: '{{.SSH_PORT}}'
           SSH_LOGIN: '{{.SSH_LOGIN}}'
           SSH_KEY: '{{.SSH_KEY}}'
-          NAMESPACE: '{{.NAMESPACE}}'
-      - task: 'host-podman-pod:{{.HOSTNAME}}'
+          ORCHESTRATOR: '{{.ORCHESTRATOR}}'
+      - task: 'host-ingress:{{.HOSTNAME}}'
         vars:
           HOST: '{{.HOST}}'
           SSH_PORT: '{{.SSH_PORT}}'
           SSH_LOGIN: '{{.SSH_LOGIN}}'
           SSH_KEY: '{{.SSH_KEY}}'
-          NAMESPACE: '{{.NAMESPACE}}'
-      - task: 'host-podman-ingress:{{.HOSTNAME}}'
-        vars:
-          HOST: '{{.HOST}}'
-          SSH_PORT: '{{.SSH_PORT}}'
-          SSH_LOGIN: '{{.SSH_LOGIN}}'
-          SSH_KEY: '{{.SSH_KEY}}'
-          NAMESPACE: '{{.NAMESPACE}}'
-      - task: 'host-podman-prune:{{.HOSTNAME}}'
-        vars:
-          HOST: '{{.HOST}}'
-          SSH_PORT: '{{.SSH_PORT}}'
-          SSH_LOGIN: '{{.SSH_LOGIN}}'
-          SSH_KEY: '{{.SSH_KEY}}'
-          NAMESPACE: '{{.NAMESPACE}}'
+          ORCHESTRATOR: '{{.ORCHESTRATOR}}'
       - task: 'host-users:{{.HOSTNAME}}'
         vars:
           HOST: '{{.HOST}}'
           SSH_PORT: '{{.SSH_PORT}}'
           SSH_LOGIN: '{{.SSH_LOGIN}}'
           SSH_KEY: '{{.SSH_KEY}}'
+          ORCHESTRATOR: '{{.ORCHESTRATOR}}'
           NAMESPACE: '{{.NAMESPACE}}'
       - echo
+
+
+  host-requirements:*:
+    internal: true
+    silent: true
+    vars:
+      HOSTNAME: '{{index .MATCH 0}}'
+      SSH: 'ssh {{.SSH_OPTIONS}} -i {{.SSH_KEY}} -p {{.SSH_PORT}} {{.SSH_LOGIN}}@{{.HOST}}'
+      SUDO:
+        sh: '{{.SSH}} command -v doas || {{.SSH}} command -v sudo || true'
+    status:
+      - '{{.SSH}} command -v {{.ORCHESTRATOR}} >/dev/null 2>&1'
+    cmds:
+      - echo 'Requirements on {{.HOSTNAME}} '
+      - cmd: |
+          command_exists() {
+            {{.SSH}} command -v "$1" >/dev/null 2>&1
+          }
+          OS=$({{.SSH}} uname -s)
+          case "${OS}" in
+            Darwin)
+              if command_exists brew; then
+                {{.SSH}} brew update
+                {{.SSH}} brew install {{.ORCHESTRATOR}}
+              else
+                echo "brew not found"
+                exit 1
+              fi
+              ;;
+            Linux)
+              if {{.SSH}} grep -q "Alpine" /etc/os-release; then
+                if command_exists apk; then
+                  {{.SSH}} {{.SUDO}} apk update
+                  {{.SSH}} {{.SUDO}} apk add {{.ORCHESTRATOR}}
+                  {{.SSH}} {{.SUDO}} rc-update add {{.ORCHESTRATOR}} default
+                else
+                  echo "apk not found"
+                  exit 1
+                fi
+              else
+                if command_exists apt-get; then
+                  {{.SSH}} {{.SUDO}} apt-get update
+                  {{.SSH}} {{.SUDO}} apt-get install -y {{.ORCHESTRATOR}}
+                  {{.SSH}} {{.SUDO}} systemctl daemon-reload
+                  {{.SSH}} {{.SUDO}} systemctl enable --now {{.ORCHESTRATOR}}
+                  {{.SSH}} {{.SUDO}} systemctl start {{.ORCHESTRATOR}}
+                else
+                  echo "apt-get not found"
+                  exit 1
+                fi
+              fi
+              ;;
+            *)
+              echo "unsupported operating system: ${OS}"
+              exit 1
+              ;;
+          esac
+        silent: true
+        ignore_error: true
+
+
+  host-ingress:*:
+    internal: true
+    silent: true
+    vars:
+      HOSTNAME: '{{index .MATCH 0}}'
+      NAMESPACE: 'ingress'
+      STATIC_RULES: |
+        {{.HOSTNAME}}.{{.DNS_ZONE}},^/(vless-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$,http://$1:8080/
+    cmds:
+      - task: '{{.ORCHESTRATOR}}:network:{{.HOSTNAME}}:create:{{.NAMESPACE}}'
+        vars:
+          HOST: '{{.HOST}}'
+          SSH_PORT: '{{.SSH_PORT}}'
+          SSH_LOGIN: '{{.SSH_LOGIN}}'
+          SSH_KEY: '{{.SSH_KEY}}'
+      - task: '{{.ORCHESTRATOR}}:group:{{.HOSTNAME}}:create:{{.NAMESPACE}}'
+        vars:
+          HOST: '{{.HOST}}'
+          SSH_PORT: '{{.SSH_PORT}}'
+          SSH_LOGIN: '{{.SSH_LOGIN}}'
+          SSH_KEY: '{{.SSH_KEY}}'
+      - task: '{{.ORCHESTRATOR}}:container:{{.HOSTNAME}}:run:{{.NAMESPACE}}-gateway-reproxy'
+        vars:
+          HOST: '{{.HOST}}'
+          SSH_PORT: '{{.SSH_PORT}}'
+          SSH_LOGIN: '{{.SSH_LOGIN}}'
+          SSH_KEY: '{{.SSH_KEY}}'
+          NAMESPACE: '{{.NAMESPACE}}'
+          MEMORY: '{{.CONTAINER_MEMORY}}'
+          VOLUMES: |
+            -v ingress-reproxy-data:/data
+            -v /run/{{.ORCHESTRATOR}}/{{.ORCHESTRATOR}}.sock:/var/run/docker.sock:ro
+          PORTS: "-p 80:8080 -p 443:8443"
+          ENVS: |
+            -e 'LOGGER_STDOUT=true'
+            -e 'SSL_TYPE=auto'
+            -e 'SSL_ACME_LOCATION=/data'
+            -e 'SSL_ACME_EMAIL=https-{{.HOSTNAME}}@{{.DNS_ZONE}}'
+            -e 'DOCKER_ENABLED=true'
+            -e 'DOCKER_AUTO=false'
+            -e 'DOCKER_NETWORK=ingress'
+            -e 'STATIC_ENABLED=true'
+            -e 'STATIC_RULES={{.STATIC_RULES | splitLines | join ";"}}'
+            -e 'MAX_SIZE=0'
+            -e 'TIMEOUT_WRITE=1h'
+          IMAGE: '{{.REPROXY_IMAGE}}'
+          COMMAND: "--dbg"
 
 
   host-users:*:
@@ -147,7 +250,28 @@ tasks:
     vars:
       HOSTNAME: '{{index .MATCH 0}}'
     cmds:
-      - echo && echo '{{.HOSTNAME}}'
+      - task: '{{.ORCHESTRATOR}}:network:{{.HOSTNAME}}:create:{{.NAMESPACE}}'
+        vars:
+          HOST: '{{.HOST}}'
+          SSH_PORT: '{{.SSH_PORT}}'
+          SSH_LOGIN: '{{.SSH_LOGIN}}'
+          SSH_KEY: '{{.SSH_KEY}}'
+          ORCHESTRATOR: '{{.ORCHESTRATOR}}'
+      - task: '{{.ORCHESTRATOR}}:group:{{.HOSTNAME}}:create:{{.NAMESPACE}}'
+        vars:
+          HOST: '{{.HOST}}'
+          SSH_PORT: '{{.SSH_PORT}}'
+          SSH_LOGIN: '{{.SSH_LOGIN}}'
+          SSH_KEY: '{{.SSH_KEY}}'
+          ORCHESTRATOR: '{{.ORCHESTRATOR}}'
+      - task: '{{.ORCHESTRATOR}}:prune:{{.HOSTNAME}}'
+        vars:
+          HOST: '{{.HOST}}'
+          SSH_PORT: '{{.SSH_PORT}}'
+          SSH_LOGIN: '{{.SSH_LOGIN}}'
+          SSH_KEY: '{{.SSH_KEY}}'
+          ORCHESTRATOR: '{{.ORCHESTRATOR}}'
+          NAMESPACE: '{{.NAMESPACE}}'
       - for: { var: USERS, split: "\n" }
         task: 'host-run:{{.HOSTNAME}}:user'
         vars:
@@ -155,6 +279,7 @@ tasks:
           SSH_PORT: '{{.SSH_PORT}}'
           SSH_LOGIN: '{{.SSH_LOGIN}}'
           SSH_KEY: '{{.SSH_KEY}}'
+          ORCHESTRATOR: '{{.ORCHESTRATOR}}'
           NAMESPACE: '{{.NAMESPACE}}'
           USER_ID: '{{ (.ITEM | split ",")._0 }}'
           USER_LOGIN: '{{ (.ITEM | split ",")._1 }}'
@@ -162,6 +287,7 @@ tasks:
           SHADOWSOCK_PORT: '{{ (.ITEM | split ",")._3 }}'
           SHADOWSOCK_PASS: '{{ (.ITEM | split ",")._4 }}'
           SHADOWSOCK_HOSTS: '{{ (.ITEM | split ",")._5 }}'
+
 
   host-prune:*:container:*:
     internal: true
@@ -177,13 +303,12 @@ tasks:
     status:
       - 'grep -q -E "{{.HOSTS}}" <<< "{{.HOSTNAME}}"'
     cmds:
-      - task: 'host-podman-container:{{.HOSTNAME}}:remove:{{.CONTAINER}}'
+      - task: '{{.ORCHESTRATOR}}:container:{{.HOSTNAME}}:remove:{{.CONTAINER}}'
         vars:
           HOST: '{{.HOST}}'
           SSH_PORT: '{{.SSH_PORT}}'
           SSH_LOGIN: '{{.SSH_LOGIN}}'
           SSH_KEY: '{{.SSH_KEY}}'
-          NAMESPACE: '{{.NAMESPACE}}'
 
 
   host-run:*:user:
@@ -198,6 +323,8 @@ tasks:
           SSH_PORT: '{{.SSH_PORT}}'
           SSH_LOGIN: '{{.SSH_LOGIN}}'
           SSH_KEY: '{{.SSH_KEY}}'
+          ORCHESTRATOR: '{{.ORCHESTRATOR}}'
+          NAMESPACE: '{{.NAMESPACE}}'
           UUID: '{{.USER_ID}}'
           LOGIN: '{{.USER_LOGIN}}'
           HOSTS: '{{.VLESS_HOSTS}}'
@@ -207,10 +334,13 @@ tasks:
           SSH_PORT: '{{.SSH_PORT}}'
           SSH_LOGIN: '{{.SSH_LOGIN}}'
           SSH_KEY: '{{.SSH_KEY}}'
+          ORCHESTRATOR: '{{.ORCHESTRATOR}}'
+          NAMESPACE: '{{.NAMESPACE}}'
           LOGIN: '{{.USER_LOGIN}}'
           PASS: '{{.SHADOWSOCK_PASS}}'
           PORT: '{{.SHADOWSOCK_PORT}}'
           HOSTS: '{{.SHADOWSOCK_HOSTS}}'
+
 
   host-run:*:user:vless-ws:
     internal: true
@@ -220,7 +350,7 @@ tasks:
     status:
       - 'grep -q -v -E "{{.HOSTS}}" <<< "{{.HOSTNAME}}"'
     cmds:
-      - task: 'host-podman-container:{{.HOSTNAME}}:run:vless-{{.UUID}}'
+      - task: '{{.ORCHESTRATOR}}:container:{{.HOSTNAME}}:run:vless-{{.UUID}}'
         vars:
           HOST: '{{.HOST}}'
           SSH_PORT: '{{.SSH_PORT}}'
@@ -228,9 +358,11 @@ tasks:
           SSH_KEY: '{{.SSH_KEY}}'
           NAMESPACE: '{{.NAMESPACE}}'
           NETWORKS: '--network ingress'
+          MEMORY: '{{.CONTAINER_MEMORY}}'
           OPTIONS: '--read-only'
           IMAGE: '{{.GLIDER_IMAGE}}'
           COMMAND: "-listen 'ws://:8080/,vless://{{.UUID}}@'"
+
 
   host-run:*:user:shadowsocks:
     internal: true
@@ -240,13 +372,14 @@ tasks:
     status:
       - "grep -q -v -E '{{.HOSTS}}' <<< '{{.HOSTNAME}}'"
     cmds:
-      - task: 'host-podman-container:{{.HOSTNAME}}:run:{{.NAMESPACE}}-shadowsocks-{{.PORT}}'
+      - task: '{{.ORCHESTRATOR}}:container:{{.HOSTNAME}}:run:{{.NAMESPACE}}-shadowsocks-{{.PORT}}'
         vars:
           HOST: '{{.HOST}}'
           SSH_PORT: '{{.SSH_PORT}}'
           SSH_LOGIN: '{{.SSH_LOGIN}}'
           SSH_KEY: '{{.SSH_KEY}}'
           NAMESPACE: '{{.NAMESPACE}}'
+          MEMORY: '{{.CONTAINER_MEMORY}}'
           OPTIONS: '--read-only'
           PORTS: '--publish {{.PORT}}:{{.PORT}}'
           COMMAND: "-listen 'ss://{{.SHADOWSOCK_CIPHER}}:{{.PASS}}@:{{.PORT}}'"
