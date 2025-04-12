@@ -2,8 +2,13 @@
 
 [ -f '.env' ] && eval "$(cat '.env' | sed -E 's/^(.+)/export \1/')"
 
+TASK_BIN="task"
+
 if command -v go-task >/dev/null 2>&1; then
-  alias task="go-task"
+  TASK_BIN="go-task"
 fi
 
-exec task --taskfile tunnels-glider-podman.taskfile.yml --sort none ${@:-'--list-all'}
+exec ${TASK_BIN} \
+  --taskfile taskfile.yml \
+  --sort none \
+  ${@:-'--list-all'}
